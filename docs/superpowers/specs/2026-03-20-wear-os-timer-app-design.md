@@ -16,7 +16,7 @@ A standalone countdown timer app for Wear OS 3.5 (TicWatch Pro 3 Ultra, model WH
 - User selects a duration from presets or sets a custom duration via scroll picker
 - Timer runs in the background via a foreground service
 - Timer survives the user navigating away from the app (back to watch face, other apps)
-- Timer survives device reboot: the target end time is persisted to DataStore, and on boot a receiver either resumes the countdown or fires the alarm immediately if the end time has already passed
+- Timer survives device reboot: the target end time (and pause state, if paused) is persisted to DataStore, and on boot a receiver either resumes the countdown, restores the paused state, or fires the alarm immediately if the end time has already passed
 - Pause/resume and cancel controls available during countdown
 
 ### Alarm Behavior
@@ -44,6 +44,7 @@ A standalone countdown timer app for Wear OS 3.5 (TicWatch Pro 3 Ultra, model WH
 - **Edit presets:** add, remove, reorder saved presets
 - **Sound toggle:** on (system default alarm) / off (silent — vibrate only)
 - **Vibration toggle:** on / off
+- If both sound and vibration are off, the alarm is visual-only (screen takeover, dismiss button, no audio or haptic)
 - Settings persisted via DataStore
 
 ### Complication
@@ -76,6 +77,7 @@ A standalone countdown timer app for Wear OS 3.5 (TicWatch Pro 3 Ultra, model WH
 
 - Listens for `BOOT_COMPLETED`
 - Reads persisted timer end time from DataStore
+- If timer was paused: restores `TimerService` in paused state with remaining duration
 - If end time is in the future: restarts `TimerService` with remaining duration
 - If end time is in the past: fires alarm immediately (timer expired while device was off)
 - If no persisted timer: does nothing
@@ -178,6 +180,7 @@ User taps preset
 | `USE_FULL_SCREEN_INTENT` | Take over screen for alarm | Auto-granted |
 | `WAKE_LOCK` | Wake + keep screen on for alarm | Auto-granted |
 | `RECEIVE_BOOT_COMPLETED` | Restore timer after reboot | Auto-granted |
+| `SCHEDULE_EXACT_ALARM` | Required for exact alarms on API 31+ (targetSdk 33) | Auto-granted on Wear OS |
 
 No dangerous permissions. No runtime permission dialogs.
 
