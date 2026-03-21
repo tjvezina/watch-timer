@@ -38,12 +38,19 @@ fun TimerNavGraph(
         composable(Routes.PRESET_LIST) {
             val context = LocalContext.current
             val presetRepository = remember { PresetRepository(context) }
+            val scope = rememberCoroutineScope()
             PresetListScreen(
                 presetRepository = presetRepository,
                 onPresetSelected = { duration ->
                     TimerService.startTimer(context, duration)
                     navController.navigate(Routes.COUNTDOWN) {
                         popUpTo(Routes.PRESET_LIST)
+                    }
+                },
+                onPresetRemoved = { duration ->
+                    scope.launch {
+                        val current = presetRepository.presets.first()
+                        presetRepository.savePresets(current.filter { it != duration })
                     }
                 },
                 onCustomSelected = {
@@ -92,14 +99,9 @@ fun TimerNavGraph(
         }
         composable(Routes.SETTINGS) {
             val context = LocalContext.current
-            val presetRepository = remember { PresetRepository(context) }
             val settingsRepository = remember { SettingsRepository(context) }
             SettingsScreen(
-                presetRepository = presetRepository,
                 settingsRepository = settingsRepository,
-                onAddPreset = {
-                    navController.navigate(Routes.ADD_PRESET)
-                },
             )
         }
     }

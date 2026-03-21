@@ -17,7 +17,7 @@ class PresetRepository(private val context: Context) {
 
     val presets: Flow<List<Long>> = context.presetDataStore.data.map { prefs ->
         prefs[presetsKey]?.let { raw ->
-            raw.split(",").mapNotNull { it.trim().toLongOrNull() }
+            raw.split(",").mapNotNull { it.trim().toLongOrNull() }.sorted()
         } ?: DEFAULT_PRESETS
     }
 
