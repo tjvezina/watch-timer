@@ -3,24 +3,24 @@ package com.watchtimerapp
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.wear.compose.material3.Text
+import com.watchtimerapp.data.TimerState
+import com.watchtimerapp.presentation.navigation.TimerNavGraph
+import com.watchtimerapp.presentation.navigation.Routes
 import com.watchtimerapp.presentation.theme.WatchTimerTheme
+import com.watchtimerapp.service.TimerService
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val startDestination = when (TimerService.timerState.value) {
+            is TimerState.Running, is TimerState.Paused -> Routes.COUNTDOWN
+            else -> Routes.PRESET_LIST
+        }
+
         setContent {
             WatchTimerTheme {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("Timer App")
-                }
+                TimerNavGraph(startDestination = startDestination)
             }
         }
     }
