@@ -2,15 +2,20 @@ package com.watchtimerapp.presentation.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.watchtimerapp.data.PresetRepository
+import com.watchtimerapp.data.SettingsRepository
 import com.watchtimerapp.presentation.screens.CountdownScreen
 import com.watchtimerapp.presentation.screens.CustomPickerScreen
 import com.watchtimerapp.presentation.screens.PresetListScreen
+import com.watchtimerapp.presentation.screens.SettingsScreen
 import com.watchtimerapp.service.TimerService
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 object Routes {
     const val PRESET_LIST = "preset_list"
@@ -69,10 +74,33 @@ fun TimerNavGraph(
             )
         }
         composable(Routes.ADD_PRESET) {
-            // CustomPickerScreen (add preset mode) — wired in Task 14
+            val context = LocalContext.current
+            val presetRepository = remember { PresetRepository(context) }
+            val scope = rememberCoroutineScope()
+            CustomPickerScreen(
+                buttonLabel = "Add",
+                onConfirm = { duration ->
+                    scope.launch {
+                        val current = presetRepository.presets.first()
+                        if (duration !in current) {
+                            presetRepository.savePresets(current + duration)
+                        }
+                    }
+                    navController.popBackStack()
+                },
+            )
         }
         composable(Routes.SETTINGS) {
-            // SettingsScreen — wired in Task 14
+            val context = LocalContext.current
+            val presetRepository = remember { PresetRepository(context) }
+            val settingsRepository = remember { SettingsRepository(context) }
+            SettingsScreen(
+                presetRepository = presetRepository,
+                settingsRepository = settingsRepository,
+                onAddPreset = {
+                    navController.navigate(Routes.ADD_PRESET)
+                },
+            )
         }
     }
 }
