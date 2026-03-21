@@ -2254,7 +2254,7 @@ fun SettingsScreen(
 
 - [ ] **Step 2: Wire into `NavGraph.kt`**
 
-Replace the `composable(Routes.SETTINGS)` block:
+Replace both the `composable(Routes.ADD_PRESET)` and `composable(Routes.SETTINGS)` placeholder blocks:
 
 ```kotlin
         composable(Routes.ADD_PRESET) {
@@ -2328,7 +2328,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import com.watchtimerapp.data.TimerState
-import com.watchtimerapp.presentation.navigation.NavGraph
+import com.watchtimerapp.presentation.navigation.TimerNavGraph
 import com.watchtimerapp.presentation.navigation.Routes
 import com.watchtimerapp.presentation.theme.WatchTimerTheme
 import com.watchtimerapp.service.TimerService
@@ -2344,7 +2344,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             WatchTimerTheme {
-                NavGraph(startDestination = startDestination)
+                TimerNavGraph(startDestination = startDestination)
             }
         }
     }
