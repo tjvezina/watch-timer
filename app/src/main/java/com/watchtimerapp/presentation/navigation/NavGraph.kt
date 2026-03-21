@@ -7,6 +7,7 @@ import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.watchtimerapp.data.PresetRepository
+import com.watchtimerapp.presentation.screens.CountdownScreen
 import com.watchtimerapp.presentation.screens.PresetListScreen
 import com.watchtimerapp.service.TimerService
 
@@ -48,7 +49,11 @@ fun TimerNavGraph(
             )
         }
         composable(Routes.COUNTDOWN) {
-            // CountdownScreen — wired in Task 12
+            CountdownScreen(
+                onCancelled = {
+                    navController.popBackStack(Routes.PRESET_LIST, inclusive = false)
+                },
+            )
         }
         composable(Routes.CUSTOM_PICKER) {
             // CustomPickerScreen — wired in Task 13
