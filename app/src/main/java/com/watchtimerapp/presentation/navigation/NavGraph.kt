@@ -8,6 +8,7 @@ import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.watchtimerapp.data.PresetRepository
 import com.watchtimerapp.presentation.screens.CountdownScreen
+import com.watchtimerapp.presentation.screens.CustomPickerScreen
 import com.watchtimerapp.presentation.screens.PresetListScreen
 import com.watchtimerapp.service.TimerService
 
@@ -56,7 +57,16 @@ fun TimerNavGraph(
             )
         }
         composable(Routes.CUSTOM_PICKER) {
-            // CustomPickerScreen — wired in Task 13
+            val context = LocalContext.current
+            CustomPickerScreen(
+                buttonLabel = "Start",
+                onConfirm = { duration ->
+                    TimerService.startTimer(context, duration)
+                    navController.navigate(Routes.COUNTDOWN) {
+                        popUpTo(Routes.PRESET_LIST)
+                    }
+                },
+            )
         }
         composable(Routes.ADD_PRESET) {
             // CustomPickerScreen (add preset mode) — wired in Task 14
