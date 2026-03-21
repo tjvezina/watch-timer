@@ -229,6 +229,7 @@ watch-timer/
 - Custom alarm sounds
 - Network features
 - Phone companion app
+- Preset reorder (deferred to v1.1 — complex on tiny round screen)
 - FSTN LCD layer (not programmable by third-party apps)
 
 ## Target Configuration
