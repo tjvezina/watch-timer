@@ -36,7 +36,16 @@
             </intent-filter>
         </activity>
 
-        <!-- AlarmActivity, TimerService, receivers, complication added in later tasks -->
+        <service
+            android:name=".service.TimerService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="timer" />
+        </service>
+
+        <!-- AlarmActivity, receivers, complication added in later tasks -->
 
     </application>
 </manifest>
