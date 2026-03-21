@@ -45,7 +45,23 @@
                 android:value="timer" />
         </service>
 
-        <!-- AlarmActivity, receivers, complication added in later tasks -->
+        <activity
+            android:name=".AlarmActivity"
+            android:exported="false"
+            android:taskAffinity=""
+            android:showOnLockScreen="true"
+            android:turnScreenOn="true"
+            android:theme="@android:style/Theme.DeviceDefault" />
+
+        <receiver
+            android:name=".receiver.AlarmReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.watchtimerapp.action.TIMER_EXPIRED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- BootReceiver, complication added in later tasks -->
 
     </application>
 </manifest>
