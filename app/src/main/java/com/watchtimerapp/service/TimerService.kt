@@ -11,8 +11,10 @@ import android.content.Intent
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
+import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.watchtimerapp.MainActivity
 import com.watchtimerapp.R
+import com.watchtimerapp.complication.TimerComplicationService
 import com.watchtimerapp.data.TimerRepository
 import com.watchtimerapp.data.TimerState
 import com.watchtimerapp.receiver.AlarmReceiver
@@ -32,6 +34,7 @@ class TimerService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var countdownJob: Job? = null
     private lateinit var timerRepository: TimerRepository
+    private var lastComplicationUpdateMinute = -1L
 
     override fun onCreate() {
         super.onCreate()
@@ -143,6 +146,7 @@ class TimerService : Service() {
         countdownJob?.cancel()
         cancelExactAlarm()
         _timerState.value = TimerState.Idle
+        requestComplicationUpdate()
         scope.launch { timerRepository.clearPersistedTimer() }
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -150,6 +154,7 @@ class TimerService : Service() {
 
     private fun dismissAlarm() {
         _timerState.value = TimerState.Idle
+        requestComplicationUpdate()
         scope.launch { timerRepository.clearPersistedTimer() }
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -173,6 +178,12 @@ class TimerService : Service() {
                     break
                 }
                 updateNotification(remaining)
+                // Update complication once per minute
+                val currentMinute = remaining / 60_000
+                if (currentMinute != lastComplicationUpdateMinute) {
+                    lastComplicationUpdateMinute = currentMinute
+                    requestComplicationUpdate()
+                }
                 delay(1_000L)
             }
         }
@@ -180,8 +191,17 @@ class TimerService : Service() {
 
     private fun onTimerFinished(originalDurationMillis: Long) {
         _timerState.value = TimerState.Alarming(originalDurationMillis = originalDurationMillis)
+        requestComplicationUpdate()
         cancelExactAlarm()
         AlarmReceiver.fireAlarm(this)
+    }
+
+    private fun requestComplicationUpdate() {
+        val requester = ComplicationDataSourceUpdateRequester.create(
+            this,
+            android.content.ComponentName(this, TimerComplicationService::class.java),
+        )
+        requester.requestUpdateAll()
     }
 
     private fun scheduleExactAlarm(triggerAtMillis: Long) {
