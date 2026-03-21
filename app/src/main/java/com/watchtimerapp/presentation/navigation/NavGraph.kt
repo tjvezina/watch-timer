@@ -1,9 +1,14 @@
 package com.watchtimerapp.presentation.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import com.watchtimerapp.data.PresetRepository
+import com.watchtimerapp.presentation.screens.PresetListScreen
+import com.watchtimerapp.service.TimerService
 
 object Routes {
     const val PRESET_LIST = "preset_list"
@@ -24,7 +29,23 @@ fun TimerNavGraph(
         startDestination = startDestination,
     ) {
         composable(Routes.PRESET_LIST) {
-            // PresetListScreen — wired in Task 11
+            val context = LocalContext.current
+            val presetRepository = remember { PresetRepository(context) }
+            PresetListScreen(
+                presetRepository = presetRepository,
+                onPresetSelected = { duration ->
+                    TimerService.startTimer(context, duration)
+                    navController.navigate(Routes.COUNTDOWN) {
+                        popUpTo(Routes.PRESET_LIST)
+                    }
+                },
+                onCustomSelected = {
+                    navController.navigate(Routes.CUSTOM_PICKER)
+                },
+                onSettingsSelected = {
+                    navController.navigate(Routes.SETTINGS)
+                },
+            )
         }
         composable(Routes.COUNTDOWN) {
             // CountdownScreen — wired in Task 12
