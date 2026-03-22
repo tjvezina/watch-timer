@@ -34,10 +34,12 @@ private val StartButtonColor = Color(0xFF274F27)
 fun CustomPickerScreen(
     onStartTimer: (Long) -> Unit,
     onSavePreset: (Long) -> Unit,
+    secondsInterval: Int = 15,
 ) {
+    val numSecondOptions = 60 / secondsInterval
     val hourState = rememberPickerState(initialNumberOfOptions = 24, initiallySelectedIndex = 0)
     val minuteState = rememberPickerState(initialNumberOfOptions = 60, initiallySelectedIndex = 5)
-    val secondState = rememberPickerState(initialNumberOfOptions = 60, initiallySelectedIndex = 0)
+    val secondState = rememberPickerState(initialNumberOfOptions = numSecondOptions, initiallySelectedIndex = 0)
     val isZero = hourState.selectedOptionIndex == 0 &&
         minuteState.selectedOptionIndex == 0 &&
         secondState.selectedOptionIndex == 0
@@ -87,13 +89,13 @@ fun CustomPickerScreen(
 
             Picker(
                 state = secondState,
-                contentDescription = { "Seconds: %02d".format(secondState.selectedOptionIndex) },
+                contentDescription = { "Seconds: %02d".format(secondState.selectedOptionIndex * secondsInterval) },
                 modifier = Modifier.width(48.dp),
                 gradientRatio = 0.5f,
             ) { index ->
                 val isSelected = index == secondState.selectedOptionIndex
                 Text(
-                    text = "%02d".format(index),
+                    text = "%02d".format(index * secondsInterval),
                     fontSize = 24.sp,
                     textAlign = TextAlign.Center,
                     color = if (isSelected) Color.White else DimTextColor,
@@ -110,7 +112,7 @@ fun CustomPickerScreen(
                 onClick = {
                     val millis = (hourState.selectedOptionIndex * 3_600_000L) +
                         (minuteState.selectedOptionIndex * 60_000L) +
-                        (secondState.selectedOptionIndex * 1_000L)
+                        (secondState.selectedOptionIndex * secondsInterval * 1_000L)
                     onSavePreset(millis)
                 },
                 enabled = !isZero,
@@ -131,7 +133,7 @@ fun CustomPickerScreen(
                 onClick = {
                     val millis = (hourState.selectedOptionIndex * 3_600_000L) +
                         (minuteState.selectedOptionIndex * 60_000L) +
-                        (secondState.selectedOptionIndex * 1_000L)
+                        (secondState.selectedOptionIndex * secondsInterval * 1_000L)
                     onStartTimer(millis)
                 },
                 enabled = !isZero,

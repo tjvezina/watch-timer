@@ -1,6 +1,8 @@
 package com.watchtimerapp.presentation.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
@@ -70,7 +72,11 @@ fun TimerNavGraph(
         composable(Routes.CUSTOM_PICKER) {
             val context = LocalContext.current
             val presetRepository = remember { PresetRepository(context) }
+            val settingsRepository = remember { SettingsRepository(context) }
             val scope = rememberCoroutineScope()
+            val secondsInterval by settingsRepository.secondsInterval.collectAsState(
+                initial = SettingsRepository.DEFAULT_SECONDS_INTERVAL,
+            )
             CustomPickerScreen(
                 onStartTimer = { duration ->
                     TimerService.startTimer(context, duration)
@@ -87,6 +93,7 @@ fun TimerNavGraph(
                         navController.popBackStack()
                     }
                 },
+                secondsInterval = secondsInterval,
             )
         }
         composable(Routes.SETTINGS) {
