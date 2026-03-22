@@ -10,6 +10,12 @@ import com.watchtimerapp.presentation.theme.WatchTimerTheme
 import com.watchtimerapp.service.TimerService
 
 class MainActivity : ComponentActivity() {
+
+    companion object {
+        var isInForeground = false
+            private set
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -23,5 +29,15 @@ class MainActivity : ComponentActivity() {
                 TimerNavGraph(startDestination = startDestination)
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        isInForeground = true
+    }
+
+    override fun onPause() {
+        super.onPause()
+        isInForeground = false
     }
 }

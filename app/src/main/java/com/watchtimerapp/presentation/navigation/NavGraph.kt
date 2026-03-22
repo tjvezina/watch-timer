@@ -21,7 +21,6 @@ object Routes {
     const val PRESET_LIST = "preset_list"
     const val COUNTDOWN = "countdown"
     const val CUSTOM_PICKER = "custom_picker"
-    const val ADD_PRESET = "add_preset"
     const val SETTINGS = "settings"
 }
 
@@ -70,30 +69,23 @@ fun TimerNavGraph(
         }
         composable(Routes.CUSTOM_PICKER) {
             val context = LocalContext.current
+            val presetRepository = remember { PresetRepository(context) }
+            val scope = rememberCoroutineScope()
             CustomPickerScreen(
-                buttonLabel = "Start",
-                onConfirm = { duration ->
+                onStartTimer = { duration ->
                     TimerService.startTimer(context, duration)
                     navController.navigate(Routes.COUNTDOWN) {
                         popUpTo(Routes.PRESET_LIST)
                     }
                 },
-            )
-        }
-        composable(Routes.ADD_PRESET) {
-            val context = LocalContext.current
-            val presetRepository = remember { PresetRepository(context) }
-            val scope = rememberCoroutineScope()
-            CustomPickerScreen(
-                buttonLabel = "Add",
-                onConfirm = { duration ->
+                onSavePreset = { duration ->
                     scope.launch {
                         val current = presetRepository.presets.first()
                         if (duration !in current) {
                             presetRepository.savePresets(current + duration)
                         }
+                        navController.popBackStack()
                     }
-                    navController.popBackStack()
                 },
             )
         }

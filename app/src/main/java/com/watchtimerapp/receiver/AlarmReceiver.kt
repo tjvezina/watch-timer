@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationCompat
 import com.watchtimerapp.AlarmActivity
+import com.watchtimerapp.MainActivity
 import com.watchtimerapp.R
 import com.watchtimerapp.data.TimerState
 import com.watchtimerapp.service.TimerService
@@ -19,7 +20,7 @@ class AlarmReceiver : BroadcastReceiver() {
             // If the service already transitioned to Alarming, it handled it.
             // This is the backup path for when Doze delayed the service.
             val currentState = TimerService.timerState.value
-            if (currentState is TimerState.Running) {
+            if (currentState is TimerState.Running && !MainActivity.isInForeground) {
                 fireAlarm(context)
             }
         }
@@ -28,7 +29,7 @@ class AlarmReceiver : BroadcastReceiver() {
     companion object {
         const val ACTION_TIMER_EXPIRED = "com.watchtimerapp.action.TIMER_EXPIRED"
         private const val ALARM_CHANNEL_ID = "alarm_channel"
-        private const val ALARM_NOTIFICATION_ID = 2
+        const val ALARM_NOTIFICATION_ID = 2
 
         fun fireAlarm(context: Context) {
             createAlarmChannel(context)

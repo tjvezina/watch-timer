@@ -8,13 +8,17 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.media.Ringtone
+import android.media.RingtoneManager
 import android.os.IBinder
-import android.os.PowerManager
+import android.os.VibrationEffect
+import android.os.Vibrator
 import androidx.core.app.NotificationCompat
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.watchtimerapp.MainActivity
 import com.watchtimerapp.R
 import com.watchtimerapp.complication.TimerComplicationService
+import com.watchtimerapp.data.SettingsRepository
 import com.watchtimerapp.data.TimerRepository
 import com.watchtimerapp.data.TimerState
 import com.watchtimerapp.receiver.AlarmReceiver
@@ -27,6 +31,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class TimerService : Service() {
@@ -35,6 +40,8 @@ class TimerService : Service() {
     private var countdownJob: Job? = null
     private lateinit var timerRepository: TimerRepository
     private var lastComplicationUpdateMinute = -1L
+    private var ringtone: Ringtone? = null
+    private var vibrator: Vibrator? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -62,6 +69,7 @@ class TimerService : Service() {
             ACTION_RESUME -> resumeTimer()
             ACTION_CANCEL -> cancelTimer()
             ACTION_DISMISS_ALARM -> dismissAlarm()
+            ACTION_RESTART -> restartTimer()
             ACTION_FIRE_EXPIRED -> {
                 val originalDuration = intent.getLongExtra(EXTRA_ORIGINAL_DURATION_MILLIS, 0L)
                 fireExpired(originalDuration)
@@ -73,6 +81,7 @@ class TimerService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        stopAlarmFeedback()
         scope.cancel()
         super.onDestroy()
     }
@@ -152,7 +161,18 @@ class TimerService : Service() {
         stopSelf()
     }
 
+    private fun restartTimer() {
+        val current = _timerState.value
+        val duration = when (current) {
+            is TimerState.Alarming -> current.originalDurationMillis
+            else -> return
+        }
+        stopAlarmFeedback()
+        startTimer(duration)
+    }
+
     private fun dismissAlarm() {
+        stopAlarmFeedback()
         _timerState.value = TimerState.Idle
         requestComplicationUpdate()
         scope.launch { timerRepository.clearPersistedTimer() }
@@ -163,7 +183,39 @@ class TimerService : Service() {
     private fun fireExpired(originalDurationMillis: Long) {
         _timerState.value = TimerState.Alarming(originalDurationMillis = originalDurationMillis)
         startForeground(NOTIFICATION_ID, buildNotification(0L))
+        startAlarmFeedback()
         AlarmReceiver.fireAlarm(this)
+    }
+
+    private fun startAlarmFeedback() {
+        val settingsRepo = SettingsRepository(applicationContext)
+        scope.launch {
+            val soundEnabled = settingsRepo.soundEnabled.first()
+            val vibrationEnabled = settingsRepo.vibrationEnabled.first()
+
+            if (soundEnabled) {
+                val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                    ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                ringtone = RingtoneManager.getRingtone(applicationContext, alarmUri)?.apply {
+                    isLooping = true
+                    play()
+                }
+            }
+
+            if (vibrationEnabled) {
+                vibrator = getSystemService(Vibrator::class.java)?.apply {
+                    val pattern = longArrayOf(0, 500, 250, 500)
+                    vibrate(VibrationEffect.createWaveform(pattern, 0))
+                }
+            }
+        }
+    }
+
+    private fun stopAlarmFeedback() {
+        ringtone?.stop()
+        ringtone = null
+        vibrator?.cancel()
+        vibrator = null
     }
 
     private fun startCountdown() {
@@ -193,7 +245,10 @@ class TimerService : Service() {
         _timerState.value = TimerState.Alarming(originalDurationMillis = originalDurationMillis)
         requestComplicationUpdate()
         cancelExactAlarm()
-        AlarmReceiver.fireAlarm(this)
+        startAlarmFeedback()
+        if (!MainActivity.isInForeground) {
+            AlarmReceiver.fireAlarm(this)
+        }
     }
 
     private fun requestComplicationUpdate() {
@@ -267,6 +322,7 @@ class TimerService : Service() {
         const val ACTION_RESUME = "com.watchtimerapp.action.RESUME"
         const val ACTION_CANCEL = "com.watchtimerapp.action.CANCEL"
         const val ACTION_DISMISS_ALARM = "com.watchtimerapp.action.DISMISS_ALARM"
+        const val ACTION_RESTART = "com.watchtimerapp.action.RESTART"
         const val ACTION_FIRE_EXPIRED = "com.watchtimerapp.action.FIRE_EXPIRED"
 
         const val EXTRA_DURATION_MILLIS = "duration_millis"
@@ -312,6 +368,13 @@ class TimerService : Service() {
         fun dismissAlarm(context: Context) {
             val intent = Intent(context, TimerService::class.java).apply {
                 action = ACTION_DISMISS_ALARM
+            }
+            context.startService(intent)
+        }
+
+        fun restartTimer(context: Context) {
+            val intent = Intent(context, TimerService::class.java).apply {
+                action = ACTION_RESTART
             }
             context.startService(intent)
         }
