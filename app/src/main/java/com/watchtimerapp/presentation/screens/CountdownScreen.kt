@@ -12,7 +12,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import android.app.Activity
+import android.view.WindowManager
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -53,6 +56,13 @@ fun CountdownScreen(
     }
 
     if (timerState is TimerState.Alarming) {
+        val activity = context as? Activity
+        DisposableEffect(Unit) {
+            activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            onDispose {
+                activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
         val alarmState = timerState as TimerState.Alarming
         AlarmScreen(
             alarmStartMillis = alarmState.alarmStartMillis,

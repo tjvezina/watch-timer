@@ -204,7 +204,7 @@ class TimerService : Service() {
 
             if (vibrationEnabled) {
                 vibrator = getSystemService(Vibrator::class.java)?.apply {
-                    val pattern = longArrayOf(0, 500, 250, 500)
+                    val pattern = longArrayOf(0, 100, 150, 100, 400, 100, 150, 100, 900)
                     vibrate(VibrationEffect.createWaveform(pattern, 0))
                 }
             }
