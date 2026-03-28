@@ -11,8 +11,13 @@ import android.content.Intent
 import android.media.Ringtone
 import android.media.RingtoneManager
 import android.os.IBinder
+import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.graphics.PixelFormat
+import android.util.Log
+import android.view.View
+import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.watchtimerapp.MainActivity
@@ -38,10 +43,12 @@ class TimerService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var countdownJob: Job? = null
+    private var alarmTimeoutJob: Job? = null
     private lateinit var timerRepository: TimerRepository
     private var lastComplicationUpdateMinute = -1L
     private var ringtone: Ringtone? = null
     private var vibrator: Vibrator? = null
+    private var alarmWakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -50,7 +57,17 @@ class TimerService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
+        if (intent == null) {
+            // Service restarted by OS after process death (START_STICKY).
+            // Restore from persisted state or stop.
+            Log.w(TAG, "onStartCommand: null intent — service restarted by OS, restoring state")
+            restoreFromPersistedState()
+            return START_STICKY
+        }
+
+        Log.d(TAG, "onStartCommand: action=${intent.action}")
+
+        when (intent.action) {
             ACTION_START -> {
                 val duration = intent.getLongExtra(EXTRA_DURATION_MILLIS, 0L)
                 if (duration > 0) startTimer(duration)
@@ -81,24 +98,65 @@ class TimerService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        Log.d(TAG, "onDestroy")
         stopAlarmFeedback()
         scope.cancel()
         super.onDestroy()
     }
 
+    private fun restoreFromPersistedState() {
+        // Must call startForeground quickly to avoid ANR on service restart.
+        startForeground(NOTIFICATION_ID, buildNotification(0L))
+        scope.launch {
+            val persisted = timerRepository.loadPersistedTimer()
+            if (persisted == null) {
+                Log.d(TAG, "restoreFromPersistedState: no persisted timer, stopping")
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+                return@launch
+            }
+            when (persisted) {
+                is TimerRepository.PersistedTimer.Paused -> {
+                    Log.i(TAG, "restoreFromPersistedState: restoring paused timer")
+                    restorePaused(persisted.remainingMillis, persisted.originalDurationMillis)
+                }
+                is TimerRepository.PersistedTimer.Running -> {
+                    val now = System.currentTimeMillis()
+                    if (persisted.endTimeMillis > now) {
+                        Log.i(TAG, "restoreFromPersistedState: timer still active, resuming")
+                        resumeFromEndTime(persisted.endTimeMillis, persisted.originalDurationMillis)
+                    } else {
+                        val elapsedSinceExpiry = now - persisted.endTimeMillis
+                        if (elapsedSinceExpiry <= STALE_ALARM_THRESHOLD_MILLIS) {
+                            Log.i(TAG, "restoreFromPersistedState: timer expired ${elapsedSinceExpiry}ms ago, firing")
+                            fireExpired(persisted.originalDurationMillis)
+                        } else {
+                            Log.w(TAG, "restoreFromPersistedState: timer expired ${elapsedSinceExpiry}ms ago (stale), clearing")
+                            timerRepository.clearPersistedTimer()
+                            stopForeground(STOP_FOREGROUND_REMOVE)
+                            stopSelf()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private fun startTimer(durationMillis: Long) {
         val endTime = System.currentTimeMillis() + durationMillis
+        Log.i(TAG, "startTimer: duration=${durationMillis}ms, endTime=$endTime")
         _timerState.value = TimerState.Running(
             endTimeMillis = endTime,
             originalDurationMillis = durationMillis,
         )
         startForeground(NOTIFICATION_ID, buildNotification(durationMillis))
-        scheduleExactAlarm(endTime)
+        scheduleExactAlarm(endTime, durationMillis)
         scope.launch { timerRepository.persistRunningTimer(endTime, durationMillis) }
         startCountdown()
     }
 
     private fun resumeFromEndTime(endTimeMillis: Long, originalDurationMillis: Long) {
+        Log.i(TAG, "resumeFromEndTime: endTime=$endTimeMillis, originalDuration=$originalDurationMillis")
         _timerState.value = TimerState.Running(
             endTimeMillis = endTimeMillis,
             originalDurationMillis = originalDurationMillis,
@@ -106,11 +164,12 @@ class TimerService : Service() {
         startForeground(NOTIFICATION_ID, buildNotification(
             (endTimeMillis - System.currentTimeMillis()).coerceAtLeast(0L)
         ))
-        scheduleExactAlarm(endTimeMillis)
+        scheduleExactAlarm(endTimeMillis, originalDurationMillis)
         startCountdown()
     }
 
     private fun restorePaused(remainingMillis: Long, originalDurationMillis: Long) {
+        Log.i(TAG, "restorePaused: remaining=${remainingMillis}ms")
         _timerState.value = TimerState.Paused(
             remainingMillis = remainingMillis,
             originalDurationMillis = originalDurationMillis,
@@ -122,6 +181,7 @@ class TimerService : Service() {
         val current = _timerState.value
         if (current is TimerState.Running) {
             val remaining = current.remainingMillis()
+            Log.i(TAG, "pauseTimer: remaining=${remaining}ms")
             _timerState.value = TimerState.Paused(
                 remainingMillis = remaining,
                 originalDurationMillis = current.originalDurationMillis,
@@ -139,11 +199,12 @@ class TimerService : Service() {
         val current = _timerState.value
         if (current is TimerState.Paused) {
             val endTime = System.currentTimeMillis() + current.remainingMillis
+            Log.i(TAG, "resumeTimer: endTime=$endTime")
             _timerState.value = TimerState.Running(
                 endTimeMillis = endTime,
                 originalDurationMillis = current.originalDurationMillis,
             )
-            scheduleExactAlarm(endTime)
+            scheduleExactAlarm(endTime, current.originalDurationMillis)
             scope.launch {
                 timerRepository.persistRunningTimer(endTime, current.originalDurationMillis)
             }
@@ -152,13 +213,19 @@ class TimerService : Service() {
     }
 
     private fun cancelTimer() {
+        Log.i(TAG, "cancelTimer")
         countdownJob?.cancel()
         cancelExactAlarm()
         _timerState.value = TimerState.Idle
         requestComplicationUpdate()
-        scope.launch { timerRepository.clearPersistedTimer() }
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        // Await persistence before stopping to avoid race condition
+        // where stopSelf() destroys the scope before the write completes.
+        scope.launch {
+            timerRepository.clearPersistedTimer()
+            Log.d(TAG, "cancelTimer: persisted state cleared, stopping service")
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
     }
 
     private fun restartTimer() {
@@ -167,31 +234,79 @@ class TimerService : Service() {
             is TimerState.Alarming -> current.originalDurationMillis
             else -> return
         }
+        Log.i(TAG, "restartTimer: duration=${duration}ms")
         stopAlarmFeedback()
+        AlarmReceiver.cancelAlarmNotification(this)
         startTimer(duration)
     }
 
     private fun dismissAlarm() {
+        Log.i(TAG, "dismissAlarm")
         stopAlarmFeedback()
+        cancelExactAlarm()
+        AlarmReceiver.cancelAlarmNotification(this)
         _timerState.value = TimerState.Idle
         requestComplicationUpdate()
-        scope.launch { timerRepository.clearPersistedTimer() }
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        // Await persistence before stopping to avoid race condition
+        // where stopSelf() destroys the scope before the write completes.
+        scope.launch {
+            timerRepository.clearPersistedTimer()
+            Log.d(TAG, "dismissAlarm: persisted state cleared, stopping service")
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
     }
 
     private fun fireExpired(originalDurationMillis: Long) {
+        if (_timerState.value is TimerState.Alarming) {
+            Log.d(TAG, "fireExpired: already alarming, ignoring")
+            return
+        }
+        Log.i(TAG, "fireExpired: originalDuration=${originalDurationMillis}ms")
         _timerState.value = TimerState.Alarming(originalDurationMillis = originalDurationMillis)
+        countdownJob?.cancel()
+        requestComplicationUpdate()
+        addOverlayWindow()
+        // Use buildNotification (points to MainActivity) — NOT buildAlarmNotification
+        // (which points to AlarmActivity). The FSI notification also uses a PendingIntent
+        // to AlarmActivity with requestCode=0. Using the same PendingIntent here via
+        // startForeground() prevents the FSI from launching the activity.
         startForeground(NOTIFICATION_ID, buildNotification(0L))
+        // Clear persisted timer immediately so it won't re-fire on reboot.
+        scope.launch { timerRepository.clearPersistedTimer() }
         startAlarmFeedback()
+        // Post separate IMPORTANCE_HIGH notification with FSI to launch AlarmActivity.
         AlarmReceiver.fireAlarm(this)
     }
 
+    private fun onTimerFinished(originalDurationMillis: Long) {
+        if (_timerState.value is TimerState.Alarming) return
+        Log.i(TAG, "onTimerFinished: originalDuration=${originalDurationMillis}ms")
+        _timerState.value = TimerState.Alarming(originalDurationMillis = originalDurationMillis)
+        requestComplicationUpdate()
+        // Add overlay window so the app has a "visible window" when AlarmReceiver fires
+        // ~1s later and calls startActivity(). This is the bg activity start exemption.
+        addOverlayWindow()
+        // DO NOT cancel the AlarmManager alarm here. The receiver needs to fire so it
+        // can call startActivity(AlarmActivity).
+        // Clear persisted timer immediately so it won't re-fire on reboot.
+        scope.launch { timerRepository.clearPersistedTimer() }
+        startAlarmFeedback()
+    }
+
+    private fun addOverlayWindow() {
+        addOverlay(this)
+    }
+
     private fun startAlarmFeedback() {
+        Log.d(TAG, "startAlarmFeedback: acquiring wakelock")
+        acquireAlarmWakeLock()
+
         val settingsRepo = SettingsRepository(applicationContext)
         scope.launch {
             val soundEnabled = settingsRepo.soundEnabled.first()
             val vibrationEnabled = settingsRepo.vibrationEnabled.first()
+            Log.d(TAG, "startAlarmFeedback: sound=$soundEnabled, vibration=$vibrationEnabled")
 
             if (soundEnabled) {
                 val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
@@ -204,18 +319,55 @@ class TimerService : Service() {
 
             if (vibrationEnabled) {
                 vibrator = getSystemService(Vibrator::class.java)?.apply {
-                    val pattern = longArrayOf(0, 100, 150, 100, 400, 100, 150, 100, 900)
+                    val pattern = longArrayOf(0, 200, 50, 200, 300, 200, 50, 200, 800)
                     vibrate(VibrationEffect.createWaveform(pattern, 0))
                 }
             }
         }
+
+        scheduleAlarmTimeout()
     }
 
     private fun stopAlarmFeedback() {
+        Log.d(TAG, "stopAlarmFeedback")
+        alarmTimeoutJob?.cancel()
+        alarmTimeoutJob = null
         ringtone?.stop()
         ringtone = null
         vibrator?.cancel()
         vibrator = null
+        releaseAlarmWakeLock()
+        removeOverlay(this)
+    }
+
+    private fun acquireAlarmWakeLock() {
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        alarmWakeLock = pm.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "watchtimerapp:alarm_feedback",
+        ).apply {
+            // Timeout slightly longer than alarm timeout as a safety net.
+            acquire(ALARM_TIMEOUT_MILLIS + 5_000L)
+        }
+    }
+
+    private fun releaseAlarmWakeLock() {
+        alarmWakeLock?.let {
+            if (it.isHeld) {
+                Log.d(TAG, "releaseAlarmWakeLock: releasing")
+                it.release()
+            }
+        }
+        alarmWakeLock = null
+    }
+
+    private fun scheduleAlarmTimeout() {
+        alarmTimeoutJob?.cancel()
+        alarmTimeoutJob = scope.launch {
+            delay(ALARM_TIMEOUT_MILLIS)
+            Log.w(TAG, "Alarm auto-dismissed after ${ALARM_TIMEOUT_MILLIS}ms timeout")
+            dismissAlarm()
+        }
     }
 
     private fun startCountdown() {
@@ -241,16 +393,6 @@ class TimerService : Service() {
         }
     }
 
-    private fun onTimerFinished(originalDurationMillis: Long) {
-        _timerState.value = TimerState.Alarming(originalDurationMillis = originalDurationMillis)
-        requestComplicationUpdate()
-        cancelExactAlarm()
-        startAlarmFeedback()
-        if (!MainActivity.isInForeground) {
-            AlarmReceiver.fireAlarm(this)
-        }
-    }
-
     private fun requestComplicationUpdate() {
         val requester = ComplicationDataSourceUpdateRequester.create(
             this,
@@ -259,23 +401,26 @@ class TimerService : Service() {
         requester.requestUpdateAll()
     }
 
-    private fun scheduleExactAlarm(triggerAtMillis: Long) {
+    private fun scheduleExactAlarm(triggerAtMillis: Long, originalDurationMillis: Long) {
         val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        Log.d(TAG, "scheduleExactAlarm: triggerAt=$triggerAtMillis")
         alarmManager.setExactAndAllowWhileIdle(
             AlarmManager.RTC_WAKEUP,
             triggerAtMillis,
-            getAlarmPendingIntent(),
+            getAlarmBroadcastPendingIntent(originalDurationMillis),
         )
     }
 
     private fun cancelExactAlarm() {
         val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        alarmManager.cancel(getAlarmPendingIntent())
+        Log.d(TAG, "cancelExactAlarm")
+        alarmManager.cancel(getAlarmBroadcastPendingIntent())
     }
 
-    private fun getAlarmPendingIntent(): PendingIntent {
+    private fun getAlarmBroadcastPendingIntent(originalDurationMillis: Long = 0L): PendingIntent {
         val intent = Intent(this, AlarmReceiver::class.java).apply {
             action = AlarmReceiver.ACTION_TIMER_EXPIRED
+            putExtra(EXTRA_ORIGINAL_DURATION_MILLIS, originalDurationMillis)
         }
         return PendingIntent.getBroadcast(
             this, 0, intent,
@@ -283,11 +428,13 @@ class TimerService : Service() {
         )
     }
 
+    // -- Notification channels & builders ----------------------------------------
+
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
             CHANNEL_ID,
             getString(R.string.timer_notification_channel),
-            NotificationManager.IMPORTANCE_LOW,
+            NotificationManager.IMPORTANCE_MIN,
         )
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(channel)
@@ -315,6 +462,8 @@ class TimerService : Service() {
     }
 
     companion object {
+        private const val TAG = "TimerService"
+
         const val ACTION_START = "com.watchtimerapp.action.START"
         const val ACTION_RESUME_WITH_END_TIME = "com.watchtimerapp.action.RESUME_WITH_END_TIME"
         const val ACTION_RESTORE_PAUSED = "com.watchtimerapp.action.RESTORE_PAUSED"
@@ -332,9 +481,46 @@ class TimerService : Service() {
 
         private const val CHANNEL_ID = "timer_channel"
         private const val NOTIFICATION_ID = 1
+        private const val ALARM_TIMEOUT_MILLIS = 600_000L // 10 minutes
+        private const val STALE_ALARM_THRESHOLD_MILLIS = 300_000L // 5 minutes
+
+        private var overlayView: View? = null
 
         private val _timerState = MutableStateFlow<TimerState>(TimerState.Idle)
         val timerState: StateFlow<TimerState> = _timerState.asStateFlow()
+
+        fun addOverlay(context: Context) {
+            if (overlayView != null) return
+            try {
+                val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                val params = WindowManager.LayoutParams(
+                    0, 0,
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                    PixelFormat.TRANSLUCENT,
+                )
+                val view = View(context)
+                wm.addView(view, params)
+                overlayView = view
+                Log.d(TAG, "addOverlay: overlay added for bg activity start exemption")
+            } catch (e: Exception) {
+                Log.w(TAG, "addOverlay: failed", e)
+            }
+        }
+
+        fun removeOverlay(context: Context) {
+            overlayView?.let {
+                try {
+                    val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                    wm.removeView(it)
+                    Log.d(TAG, "removeOverlay: overlay removed")
+                } catch (e: Exception) {
+                    Log.w(TAG, "removeOverlay: failed", e)
+                }
+            }
+            overlayView = null
+        }
 
         fun startTimer(context: Context, durationMillis: Long) {
             val intent = Intent(context, TimerService::class.java).apply {
