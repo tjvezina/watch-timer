@@ -8,6 +8,7 @@
 .externalNativeBuild
 .cxx
 local.properties
+.DS_Store
 .superpowers/
 logs/
 .mcp.json
