@@ -29,6 +29,7 @@ class PresetRepository(private val context: Context) {
 
     companion object {
         val DEFAULT_PRESETS: List<Long> = listOf(
+            5_000L,
             1 * 60_000L,
             3 * 60_000L,
             5 * 60_000L,
