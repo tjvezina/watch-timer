@@ -4,4 +4,7 @@
     <string name="complication_label">Timer</string>
     <string name="timer_notification_channel">Timer</string>
     <string name="timer_running">Timer running</string>
+    <string name="timer_alarm_channel">Timer Alarm</string>
+    <string name="timer_finished">Timer finished</string>
+    <string name="alarm_dismiss">Stop</string>
 </resources>

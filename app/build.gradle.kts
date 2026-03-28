@@ -66,6 +66,9 @@ dependencies {
     // Wear Complications
     implementation("androidx.wear.watchface:watchface-complications-data-source-ktx:1.2.1")
 
+    // Splash Screen
+    implementation("androidx.core:core-splashscreen:1.0.1")
+
     // Core + Lifecycle
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.0")

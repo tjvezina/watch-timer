@@ -3,6 +3,7 @@ package com.watchtimerapp
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.watchtimerapp.data.TimerState
 import com.watchtimerapp.presentation.navigation.TimerNavGraph
 import com.watchtimerapp.presentation.navigation.Routes
@@ -17,10 +18,11 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
 
         val startDestination = when (TimerService.timerState.value) {
-            is TimerState.Running, is TimerState.Paused -> Routes.COUNTDOWN
+            is TimerState.Running, is TimerState.Paused, is TimerState.Alarming -> Routes.COUNTDOWN
             else -> Routes.PRESET_LIST
         }
 
